@@ -3,8 +3,40 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const { body, validationResult } = require('express-validator');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
+
+app.use((req, res, next) => {
+  
+  res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'");
+  
+  
+  res.setHeader("X-Frame-Options", "DENY");
+  
+  
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  
+  
+  res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+  
+  
+  res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+  res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  
+  
+  res.removeHeader("X-Powered-By");
+  
+  next();
+});
+
+const limiter = rateLimit({
+  windowMS: 15 * 50 * 1000,
+  max: 120
+});
+app.use(limiter);
+
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -14,10 +46,22 @@ if (!fs.existsSync(BASE_DIR)) fs.mkdirSync(BASE_DIR, { recursive: true });
 
 // helper to canonicalize and check
 function resolveSafe(baseDir, userInput) {
+  // Decode Safely
   try {
     userInput = decodeURIComponent(userInput);
-  } catch (e) {}
-  return path.resolve(baseDir, userInput);
+  } catch (e) {
+  return null;
+}
+
+const resolved = path.resolve(baseDir, userInput);
+const canonicalBase = fs.realpathSync(baseDir);
+const canonicalPath = path.resolve(resolved);
+
+if(!canonicalPath.startsWith(canonicalBase + path.sep)) {
+  return null; //Traversing attempt
+}
+
+return canonicalPath;
 }
 
 // Secure route
@@ -31,6 +75,7 @@ app.post(
     .notEmpty().withMessage('filename must not be empty')
     .custom(value => {
       if (value.includes('\0')) throw new Error('null byte not allowed');
+      if (value.includes('..')) throw new Error('path traversal not allowed');
       return true;
     }),
   (req, res) => {
@@ -39,8 +84,9 @@ app.post(
 
     const filename = req.body.filename;
     const normalized = resolveSafe(BASE_DIR, filename);
-    if (!normalized.startsWith(BASE_DIR + path.sep)) {
-      return res.status(403).json({ error: 'Path traversal detected' });
+    
+    if (!normalized) {
+      return res.status(403).json({ error: 'Invalid path' });
     }
     if (!fs.existsSync(normalized)) return res.status(404).json({ error: 'File not found' });
 
@@ -49,14 +95,14 @@ app.post(
   }
 );
 
-// Vulnerable route (demo)
+/* Vulnerable route (demo)
 app.post('/read-no-validate', (req, res) => {
   const filename = req.body.filename || '';
   const joined = path.join(BASE_DIR, filename); // intentionally vulnerable
   if (!fs.existsSync(joined)) return res.status(404).json({ error: 'File not found', path: joined });
   const content = fs.readFileSync(joined, 'utf8');
   res.json({ path: joined, content });
-});
+}); */
 
 // Helper route for samples
 app.post('/setup-sample', (req, res) => {
