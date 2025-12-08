@@ -1,5 +1,17 @@
 const API = "http://localhost:4000";
 
+let csrfToken = null;
+
+async function fetchCSRFToken() {
+  try {
+    const res = await fetch(`${API}/csrf-token`, { credentials: "include" });
+    const data = await res.json();
+    csrfToken = data.csrfToken;
+  } catch (error) {
+    console.error("Failed fetch of CSRF token:", error);
+  }
+}
+
 async function login(e) {
   e.preventDefault();
   const username = document.getElementById("username").value;
@@ -21,6 +33,8 @@ async function login(e) {
   }
 
   status.textContent = "Logged in!";
+
+  await fetchCSRFToken();
   loadUser();
 }
 
@@ -31,14 +45,11 @@ async function loadUser() {
   const me = await res.json();
 
   document.getElementById("login-section").style.display = "none";
-
   document.getElementById("user-section").style.display = "";
   document.getElementById("transactions-section").style.display = "";
   document.getElementById("feedback-section").style.display = "";
   document.getElementById("email-section").style.display = "";
-
-  document.getElementById("user-info").textContent =
-    `${me.username} (${me.email})`;
+  document.getElementById("user-info").textContent = `${me.username} (${me.email})`;
 }
 
 async function searchTransactions(e) {
@@ -64,13 +75,21 @@ async function submitFeedback(e) {
   e.preventDefault();
   const comment = document.getElementById("feedback-comment").value;
 
-  await fetch(`${API}/feedback`, {
+  const res = await fetch(`${API}/feedback`, {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
+    headers: { 
+      "Content-Type": "application/json",
+      "CSRF-Token": csrfToken
+    },
     body: JSON.stringify({ comment })
   });
 
+  if (!res.ok) {
+    alert("Failed to submit feedback");
+    return;
+  }
+  
   loadFeedback();
 }
 
@@ -82,9 +101,12 @@ async function loadFeedback() {
   container.innerHTML = "";
 
   list.forEach(f => {
-    // STORED XSS HERE
+    // STORED XSS HERE (FIXED)
     const p = document.createElement("p");
-    p.innerHTML = `<strong>${f.user}:</strong> ${f.comment}`;
+    const s = document.createElement("s");
+    s.textContent = f.user + ": ";
+    p.appendChild(s)
+    p.appendChild(document.createTextNode(f.comment));
     container.appendChild(p);
   });
 }
@@ -96,9 +118,17 @@ async function updateEmail(e) {
   await fetch(`${API}/change-email`, {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
+    headers: { 
+      "Content-Type": "application/json",
+      "CSRF-Token": csrfToken
+    },
     body: JSON.stringify({ email })
   });
+
+  if (!res.ok) {
+    alert("Failed to update email");
+    return;
+  }  
 
   loadUser(); // reload email
 }
@@ -108,4 +138,6 @@ document.getElementById("login-form").onsubmit = login;
 document.getElementById("search-form").onsubmit = searchTransactions;
 document.getElementById("feedback-form").onsubmit = submitFeedback;
 document.getElementById("email-form").onsubmit = updateEmail;
+
+fetchCSRFToken();
 
