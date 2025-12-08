@@ -32,10 +32,10 @@ jobs:
           nohup npm start &
           sleep 10
       
-      - name: Serve frontend with Python
+      - name: Serve frontend with Node.js (More secure)
         working-directory: fastbank-auth-lab/src
         run: |
-          nohup python3 -m http.server 8080 &
+          nohup python3 -m static-server.js &
           sleep 5
       
       - name: Run OWASP ZAP full scan
