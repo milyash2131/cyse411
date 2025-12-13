@@ -133,7 +133,7 @@ app.get("/csrf-token", (req, res) => {
 app.post("/login", (req, res) => {
   const { username, password } = req.body;
 
-  const sql = `SELECT id, username, password_hash FROM users WHERE username = '${username}'`;
+  const sql = `SELECT id, username, password_hash FROM users WHERE username = ?`;
 
   db.get(sql, [username], asynch(err, user) => {
 
